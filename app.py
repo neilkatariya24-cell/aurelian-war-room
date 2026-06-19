@@ -3,7 +3,23 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import os
 import datetime
 import requests
-from sentinel import AurelianWarRoom, DataFetcher, WATCHLIST
+# Mock imports if sentinel.py is old version
+try:
+    from sentinel import AurelianWarRoom, DataFetcher, WATCHLIST
+except ImportError:
+    # Fallback if sentinel.py doesn't have these classes
+    AurelianWarRoom = None
+    DataFetcher = None
+    WATCHLIST = {
+        "RELIANCE.NS": {"sector": "Energy", "weight": 10},
+        "TATAMOTORS.NS": {"sector": "Auto", "weight": 8},
+        "INFY.NS": {"sector": "IT", "weight": 9},
+        "HDFCBANK.NS": {"sector": "Banking", "weight": 10},
+        "TCS.NS": {"sector": "IT", "weight": 9},
+        "SBIN.NS": {"sector": "Banking", "weight": 8},
+        "BAJFINANCE.NS": {"sector": "NBFC", "weight": 7},
+        "ASIANPAINT.NS": {"sector": "Consumer", "weight": 7},
+    }
 
 app = Flask(__name__)
 
