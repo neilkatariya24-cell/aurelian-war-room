@@ -1,0 +1,149 @@
+from flask import Flask, render_template_string
+from apscheduler.schedulers.background import BackgroundScheduler
+import os
+import datetime
+from sentinel import AurelianWarRoom
+
+app = Flask(__name__)
+
+# Track runs
+run_history = []
+
+def run_sentinel():
+    """Run the war room and log it."""
+    try:
+        war_room = AurelianWarRoom()
+        success = war_room.run()
+        run_history.append({
+            "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "status": "SUCCESS" if success else "FAILED"
+        })
+        # Keep only last 10 runs
+        if len(run_history) > 10:
+            run_history.pop(0)
+    except Exception as e:
+        run_history.append({
+            "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "status": f"ERROR: {str(e)[:50]}"
+        })
+
+# Schedule daily at 8 AM IST
+scheduler = BackgroundScheduler()
+scheduler.add_job(run_sentinel, 'cron', hour=8, minute=0, timezone='Asia/Kolkata')
+scheduler.start()
+
+@app.route('/')
+def dashboard():
+    """Web dashboard showing agent status."""
+    html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Aurelian Finance War Room</title>
+        <style>
+            body { font-family: Arial, sans-serif; background: #0a0a0a; color: #fff; margin: 0; padding: 20px; }
+            .header { text-align: center; border-bottom: 2px solid #gold; padding: 20px; }
+            .status { display: flex; justify-content: space-around; margin: 30px 0; }
+            .agent-box { background: #1a1a2e; border: 1px solid #333; padding: 20px; border-radius: 10px; width: 200px; text-align: center; }
+            .green { color: #00ff88; }
+            .red { color: #ff4444; }
+            .yellow { color: #ffaa00; }
+            .run-log { background: #1a1a2e; padding: 15px; border-radius: 10px; margin-top: 20px; }
+            .run-item { padding: 8px; border-bottom: 1px solid #333; }
+            h1 { color: #gold; }
+            .btn { background: #gold; color: #000; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; margin: 5px; }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>🏛️ AURELIAN FINANCE WAR ROOM</h1>
+            <p>Autonomous Multi-Agent Market Intelligence</p>
+            <p>Last check: {{ last_run }}</p>
+        </div>
+        
+        <div class="status">
+            <div class="agent-box">
+                <h3>📡 Data Fetcher</h3>
+                <p class="green">● ONLINE</p>
+                <p>NSE Live Feed</p>
+            </div>
+            <div class="agent-box">
+                <h3>🤖 Market Analyst</h3>
+                <p class="green">● ACTIVE</p>
+                <p>Price/Vol Alerts</p>
+            </div>
+            <div class="agent-box">
+                <h3>🔎 Forensic Auditor</h3>
+                <p class="green">● ACTIVE</p>
+                <p>Debt/PE Checks</p>
+            </div>
+            <div class="agent-box">
+                <h3>🧠 Claude AI</h3>
+                <p class="{{ 'green' if claude else 'red' }}">● {{ 'ONLINE' if claude else 'OFFLINE' }}</p>
+                <p>Smart Summaries</p>
+            </div>
+        </div>
+        
+        <div style="text-align: center; margin: 20px;">
+            <a href="/trigger"><button class="btn">🚀 RUN NOW</button></a>
+            <a href="/reports"><button class="btn">📄 VIEW REPORTS</button></a>
+        </div>
+        
+        <div class="run-log">
+            <h3>📋 Recent Runs</h3>
+            {% for run in runs %}
+            <div class="run-item">
+                <span class="{{ 'green' if 'SUCCESS' in run.status else 'red' }}">{{ run.status }}</span>
+                <span style="float: right;">{{ run.time }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </body>
+    </html>
+    """
+    
+    # Check if Claude is configured
+    claude_on = bool(os.getenv("CLAUDE_API_KEY", ""))
+    
+    # Get last run time
+    last_run = run_history[-1]["time"] if run_history else "Never"
+    
+    return render_template_string(html, runs=run_history[::-1], claude=claude_on, last_run=last_run)
+
+@app.route('/trigger')
+def trigger():
+    """Manually trigger a run."""
+    run_sentinel()
+    return "✅ War Room triggered! <a href='/'>Back to dashboard</a>"
+
+@app.route('/reports')
+def reports():
+    """List saved reports."""
+    reports_dir = "reports"
+    if not os.path.exists(reports_dir):
+        return "No reports yet. Run the agent first."
+    
+    files = sorted(os.listdir(reports_dir), reverse=True)
+    files = [f for f in files if f.endswith('.txt')]
+    
+    html = "<h1>📄 Saved Reports</h1><ul>"
+    for f in files[:10]:
+        html += f"<li><a href='/report/{f}'>{f}</a></li>"
+    html += "</ul><a href='/'>Back</a>"
+    return html
+
+@app.route('/report/<filename>')
+def view_report(filename):
+    """View a specific report."""
+    filepath = os.path.join("reports", filename)
+    if os.path.exists(filepath):
+        with open(filepath, 'r', encoding='utf-8') as f:
+            content = f.read()
+        return f"<pre style='background:#0a0a0a;color:#fff;padding:20px;'>{content}</pre><br><a href='/'>Back</a>"
+    return "Report not found"
+
+if __name__ == '__main__':
+    # Run once on startup
+    run_sentinel()
+    # Start web server
+    app.run(host='0.0.0.0', port=5000, debug=False)
