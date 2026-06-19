@@ -145,5 +145,6 @@ def view_report(filename):
 if __name__ == '__main__':
     # Run once on startup
     run_sentinel()
-    # Start web server
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    # Start web server - use Railway's PORT or default 5000
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
