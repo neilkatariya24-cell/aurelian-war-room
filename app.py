@@ -796,9 +796,11 @@ Keep it concise and professional."""
                                   user_stocks=stocks_input,
                                   portfolio_result=result)
 
+# Get PORT from environment at startup
+port = int(os.environ.get("PORT", 5000))
+
 if __name__ == '__main__':
     # Run once on startup
     run_sentinel()
     # Start web server
-    port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
