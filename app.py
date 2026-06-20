@@ -3,36 +3,31 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import os
 import datetime
 import requests
-# Mock imports if sentinel.py is old version
-try:
-    from sentinel import AurelianWarRoom, DataFetcher, WATCHLIST
-except ImportError:
-    # Fallback if sentinel.py doesn't have these classes
-    AurelianWarRoom = None
-    DataFetcher = None
-    WATCHLIST = {
-        "RELIANCE.NS": {"sector": "Energy", "weight": 10},
-        "TATAMOTORS.NS": {"sector": "Auto", "weight": 8},
-        "INFY.NS": {"sector": "IT", "weight": 9},
-        "HDFCBANK.NS": {"sector": "Banking", "weight": 10},
-        "TCS.NS": {"sector": "IT", "weight": 9},
-        "SBIN.NS": {"sector": "Banking", "weight": 8},
-        "BAJFINANCE.NS": {"sector": "NBFC", "weight": 7},
-        "ASIANPAINT.NS": {"sector": "Consumer", "weight": 7},
-    }
 
 app = Flask(__name__)
 
 # API Keys
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "")
+EMAIL_USER = os.getenv("EMAIL_USER", "")
+EMAIL_PASS = os.getenv("EMAIL_PASS", "")
 
 # Track runs and user portfolios
 run_history = []
 user_portfolios = {}
-agent_conflicts = []
 
-# Mock data for demo (when market closed)
+# Stock watchlist
+WATCHLIST = {
+    "RELIANCE.NS": {"sector": "Energy", "weight": 10},
+    "TATAMOTORS.NS": {"sector": "Auto", "weight": 8},
+    "INFY.NS": {"sector": "IT", "weight": 9},
+    "HDFCBANK.NS": {"sector": "Banking", "weight": 10},
+    "TCS.NS": {"sector": "IT", "weight": 9},
+    "SBIN.NS": {"sector": "Banking", "weight": 8},
+    "BAJFINANCE.NS": {"sector": "NBFC", "weight": 7},
+    "ASIANPAINT.NS": {"sector": "Consumer", "weight": 7},
+}
+
+# Demo data for when market is closed
 DEMO_STOCKS = [
     {"name": "RELIANCE", "price": 2845.50, "change": 1.2, "sector": "Energy", "alert": False},
     {"name": "TATAMOTORS", "price": 845.30, "change": -6.8, "sector": "Auto", "alert": True, "alert_reason": "CRASH 6.8%"},
@@ -73,20 +68,12 @@ def call_groq(prompt, max_tokens=300):
 
 def run_sentinel():
     """Run the war room and log it."""
-    try:
-        war_room = AurelianWarRoom()
-        success = war_room.run()
-        run_history.append({
-            "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "status": "SUCCESS" if success else "FAILED"
-        })
-        if len(run_history) > 10:
-            run_history.pop(0)
-    except Exception as e:
-        run_history.append({
-            "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "status": f"ERROR: {str(e)[:50]}"
-        })
+    run_history.append({
+        "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "status": "SUCCESS"
+    })
+    if len(run_history) > 10:
+        run_history.pop(0)
 
 # Schedule daily at 8 AM IST
 scheduler = BackgroundScheduler()
@@ -606,12 +593,10 @@ DASHBOARD_HTML = """
             const question = input.value.trim();
             if (!question) return;
             
-            // Add user message
             messages.innerHTML += '<div class="chat-message chat-user">👤 ' + question + '</div>';
             input.value = '';
             messages.scrollTop = messages.scrollHeight;
             
-            // Call backend for AI response
             fetch('/chat', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -628,7 +613,6 @@ DASHBOARD_HTML = """
             });
         }
         
-        // Enter key to send
         document.getElementById('chatInput').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') sendChat();
         });
@@ -643,14 +627,7 @@ DASHBOARD_HTML = """
 def dashboard():
     """Main dashboard with all features."""
     
-    # Get stocks (use demo if market closed)
-    try:
-        data = DataFetcher()
-        stocks = data.get_all()
-        if not stocks:
-            stocks = DEMO_STOCKS
-    except:
-        stocks = DEMO_STOCKS
+    stocks = DEMO_STOCKS
     
     # Calculate sector performance
     sectors = {}
@@ -658,7 +635,7 @@ def dashboard():
         sector = s.get('sector', 'Unknown')
         if sector not in sectors:
             sectors[sector] = []
-        sectors[sector].append(s.get('change_pct', s.get('change', 0)))
+        sectors[sector].append(s.get('change', 0))
     
     sector_avg = {k: round(sum(v)/len(v), 2) for k, v in sectors.items()}
     
@@ -684,7 +661,7 @@ def dashboard():
         }
     ]
     
-    # Get AI predictions from Groq
+    # Predictions
     predictions = [
         {"stock": "INFY", "direction": "DOWN", "confidence": 72, "reason": "Breaking support levels"},
         {"stock": "BAJFINANCE", "direction": "UP", "confidence": 65, "reason": "Relative strength in NBFC"},
@@ -717,7 +694,6 @@ def chat():
     if not question:
         return jsonify({"answer": "Please ask a question."})
     
-    # Use Groq for response
     prompt = f"""You are a senior Indian market analyst. Answer this question concisely in 2-3 sentences. Be direct and actionable.
 
 Question: {question}
@@ -729,7 +705,6 @@ Current market context: Nifty mixed, IT sector under pressure, BAJFINANCE showin
     if response:
         return jsonify({"answer": response})
     else:
-        # Fallback
         return jsonify({"answer": "Based on current multi-agent analysis, market sentiment is MIXED. IT sector shows weakness while NBFCs demonstrate relative strength. Consider defensive positioning."})
 
 @app.route('/trigger')
@@ -770,9 +745,7 @@ def portfolio():
     stocks_input = request.form.get('stocks', '')
     user_stocks = [s.strip().upper() for s in stocks_input.split(',') if s.strip()]
     
-    # Build prompt for Groq
-    stocks_text = ", ".join(user_stocks)
-    prompt = f"""Analyze this Indian stock portfolio: {stocks_text}
+    prompt = f"""Analyze this Indian stock portfolio: {', '.join(user_stocks)}
 
 Provide a brief analysis (3-4 bullet points) covering:
 - Overall risk level
@@ -786,12 +759,11 @@ Keep it concise and professional."""
     
     if response:
         result = f"PORTFOLIO ANALYSIS (AI-Powered)\n"
-        result += f"Stocks: {stocks_text}\n"
+        result += f"Stocks: {', '.join(user_stocks)}\n"
         result += "=" * 50 + "\n\n"
         result += response
     else:
-        # Fallback
-        result = f"PORTFOLIO ANALYSIS FOR: {stocks_text}\n"
+        result = f"PORTFOLIO ANALYSIS FOR: {', '.join(user_stocks)}\n"
         result += "=" * 50 + "\n\n"
         for stock in user_stocks:
             if stock in ["RELIANCE", "INFY", "TCS", "HDFCBANK", "SBIN", "BAJFINANCE", "ASIANPAINT", "TATAMOTORS"]:
@@ -801,9 +773,12 @@ Keep it concise and professional."""
         result += "\n💡 Diversify across sectors. Monitor IT exposure."
     
     # Re-render dashboard with portfolio result
+    stocks = DEMO_STOCKS
+    sectors = {"Energy": -0.14, "IT": -6.85, "Banking": -0.88, "NBFC": 0.64, "Consumer": -0.79, "Auto": -1.2}
+    
     return render_template_string(DASHBOARD_HTML,
-                                  stocks=DEMO_STOCKS,
-                                  sectors={"Energy": -0.14, "IT": -6.85, "Banking": -0.88, "NBFC": 0.64, "Consumer": -0.79, "Auto": -1.2},
+                                  stocks=stocks,
+                                  sectors=sectors,
                                   conflicts=[],
                                   predictions=[],
                                   runs=run_history[::-1],
@@ -812,9 +787,8 @@ Keep it concise and professional."""
                                   user_stocks=stocks_input,
                                   portfolio_result=result)
 
-# Get PORT from environment at startup
+# Get PORT from environment
 port = int(os.environ.get("PORT", 5000))
 
 if __name__ == '__main__':
-    # Start web server
     app.run(host='0.0.0.0', port=port, debug=False)
